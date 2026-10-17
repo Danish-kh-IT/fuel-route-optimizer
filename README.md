@@ -73,7 +73,7 @@ fuel-route-optimizer/
 ### 1. Clone and create a virtual environment
 
 ```bash
-git clone <YOUR_REPOSITORY_URL>
+git clone (https://github.com/Danish-kh-IT/fuel-route-optimizer)
 cd fuel-route-optimizer
 python -m venv .venv
 ```
