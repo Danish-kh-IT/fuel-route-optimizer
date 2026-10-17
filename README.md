@@ -280,12 +280,3 @@ matching. This is suitable for demonstrating the route optimization design,
 but a production system should replace it with verified station coordinates.
 
 ---
-
-## Loom Demonstration Outline
-
-1. Send a New York-to-Los Angeles request in Postman.
-2. Show the six fuel stops, 380-460 mile legs, total cost, and route geometry.
-3. Show a validation error using a missing location.
-4. Briefly explain `routing/views.py`, `routing/services.py`, and
-   `routing/tests.py`.
-5. Run `python manage.py test` and keep the full video under five minutes.
