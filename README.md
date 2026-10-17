@@ -1,44 +1,38 @@
 # Optimal Fuel Route Planning API
 
-A RESTful API built with **Django REST Framework** that calculates a driving
-route between two locations in the USA and recommends practical,
-cost-effective fuel stops along that route. The response includes GeoJSON route
-geometry, fuel-stop details, individual travel legs, total fuel consumption,
-and estimated trip fuel cost.
+A robust RESTful API built with **Django REST Framework (DRF)** that determines
+a practical, cost-effective driving route between two locations in the USA.
+It dynamically selects refueling stations using fuel prices, vehicle range,
+route position, and fuel efficiency.
 
 ---
 
 ## Technical Specifications & Assumptions
 
-- **Framework**: Django 6.1.2 with Django REST Framework.
-- **Supported Locations**: Start and finish must resolve to locations within
-  the USA.
+- **Framework**: Django 6.1.2 and Django REST Framework.
 - **Vehicle Range**: Maximum 500 miles on a full 50-gallon tank.
-- **Fuel Efficiency**: Fixed at 10 miles per gallon (MPG).
-- **Geocoding**: Nominatim resolves the two input locations. Lookups are
-  rate-limited and cached in the application process.
-- **Routing Engine**: Open Source Routing Machine (OSRM) public API. Each
-  calculation makes one routing call; an uncached request makes up to three
+- **Fuel Efficiency**: 10 miles per gallon (MPG).
+- **Location Validation**: Start and finish must resolve to locations in the
+  USA.
+- **Geocoding**: Nominatim resolves both input locations. Results are cached
+  in-process and public-service rate limits are respected.
+- **Routing Engine**: Open Source Routing Machine (OSRM) public API. The API
+  makes one routing call per calculation; an uncached request makes up to three
   external calls including the two geocoding lookups.
-- **Route Output**: Full GeoJSON `LineString`, suitable for rendering with
-  Leaflet, Mapbox, or another map client.
-- **Fuel Data Processing**: The supplied fuel-price CSV is preprocessed once
-  into a coordinate-enriched file and loaded into memory when Django starts.
-- **Station Coordinates**: The source file does not contain coordinates, so
-  the included preprocessing step maps stations to approximate city-level
-  coordinates.
-- **Detour Corridor**: Stations are filtered to an estimated maximum 20-mile
-  perpendicular distance from the route.
+- **Fuel Data Processing**: The provided station-price dataset is enriched
+  offline with approximate city-level coordinates and loaded into memory when
+  Django starts.
+- **Detour Corridor**: Shapely filters stations to an estimated maximum
+  20-mile perpendicular distance from the route.
 - **Preferred Stop Window**: The cheapest viable station between 380 and 460
-  miles from the previous stop is selected. This leaves at least a 40-mile
-  reserve below maximum range.
-- **Fallback Stop Window**: A 300-500 mile window is used only when the
-  preferred window has no station. Emergency shorter stops are allowed only
-  when required by dataset coverage, and every fallback is reported.
-- **Origin Fuel Price**: Estimated using the cheapest route candidate in the
-  first 50 miles. The dataset median is used when no nearby candidate exists.
-- **Starting Fuel**: The vehicle starts with an empty tank and purchases only
-  the fuel required for each planned leg.
+  miles from the previous stop is selected, leaving a safety reserve below the
+  500-mile limit.
+- **Fallback Window**: A 300-500 mile window is used only when the preferred
+  window contains no viable station. Any fallback is reported in the response.
+- **Starting Fuel**: The vehicle starts with an empty tank and purchases the
+  fuel required for each planned leg.
+- **Origin Price**: Estimated from the cheapest candidate station in the first
+  50 route miles, or the dataset median when no nearby candidate exists.
 
 ---
 
@@ -47,7 +41,7 @@ and estimated trip fuel cost.
 ```text
 fuel-route-optimizer/
 |
-|-- core/                              # Django project configuration
+|-- core/                              # Django configuration
 |   |-- settings.py                    # Environment-aware settings
 |   |-- urls.py                        # Root URL configuration
 |   |-- asgi.py
@@ -55,18 +49,18 @@ fuel-route-optimizer/
 |
 |-- routing/                           # Route and fuel optimization app
 |   |-- serializers.py                 # Request validation
-|   |-- services.py                    # Routing, spatial search, optimization
-|   |-- views.py                       # REST API endpoint and error handling
-|   |-- urls.py                        # API route definition
-|   |-- tests.py                       # Automated test suite
+|   |-- services.py                    # Spatial search and optimization
+|   |-- views.py                       # REST API handlers
+|   |-- urls.py                        # API routes
+|   |-- tests.py                       # Automated tests
 |   `-- migrations/
 |
-|-- fuel-prices-for-be-assessment.csv  # Original supplied fuel-price data
-|-- fuel_stations_with_coords.csv      # Preprocessed station data
 |-- preprocess.py                      # Offline coordinate preprocessing
-|-- requirements.txt                   # Compatible Python dependency ranges
+|-- fuel_stations_with_coords.csv      # Coordinate-enriched station data
+|-- fuel-prices-for-be-assessment.csv  # Original supplied fuel data
+|-- requirements.txt                   # Compatible dependency ranges
 |-- .env.example                       # Environment variable examples
-|-- .python-version                    # Required Python version
+|-- .python-version                    # Python version
 |-- .gitignore
 |-- manage.py
 `-- README.md
@@ -74,34 +68,13 @@ fuel-route-optimizer/
 
 ---
 
-## Optimization Flow
+## Installation & Setup
 
-1. Validate the request and geocode both locations inside the USA.
-2. Make one OSRM request for the complete driving route.
-3. Build a route corridor and find candidate fuel stations near the route.
-4. Starting at mile zero, search the preferred 380-460 mile window.
-5. Select the cheapest viable station in that window, using detour and forward
-   reachability as tie-break considerations.
-6. Use the documented fallback window only when necessary.
-7. Calculate gallons and purchase cost for every leg at 10 MPG.
-8. Return fuel stops, travel legs, totals, assumptions, and GeoJSON geometry.
-
-Every generated leg is validated against the hard 500-mile vehicle range. If
-the supplied station data cannot support the route, the API returns an explicit
-`422 Unprocessable Entity` response instead of an invalid plan.
-
----
-
-## Installation
-
-### Requirements
-
-- Python 3.12+
-- pip
-
-Create the environment:
+### 1. Clone and create a virtual environment
 
 ```bash
+git clone <YOUR_REPOSITORY_URL>
+cd fuel-route-optimizer
 python -m venv .venv
 ```
 
@@ -111,29 +84,50 @@ Activate it in Git Bash:
 source .venv/Scripts/activate
 ```
 
-Or activate it in PowerShell:
+Activate it in PowerShell:
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
 ```
 
-Install and start the project:
+Activate it on Linux or macOS:
+
+```bash
+source .venv/bin/activate
+```
+
+### 2. Install dependencies
 
 ```bash
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+```
+
+### 3. Data preprocessing (optional)
+
+The processed station file is included. If
+`fuel_stations_with_coords.csv` is missing, regenerate it from the supplied raw
+dataset:
+
+```bash
+python preprocess.py
+```
+
+### 4. Run migrations and start the server
+
+```bash
 python manage.py migrate
 python manage.py runserver
 ```
 
-The development API is available at `http://127.0.0.1:8000/`.
+The development server starts at `http://127.0.0.1:8000/`.
 
 ---
 
 ## Environment Configuration
 
-The application has safe local-development defaults. For deployment, configure
-the variables shown in `.env.example` through the hosting environment:
+Local defaults work without an `.env` loader. For deployment, configure the
+values shown in `.env.example` through the hosting environment:
 
 ```text
 DJANGO_SECRET_KEY=replace-with-a-long-random-secret
@@ -143,21 +137,16 @@ NOMINATIM_USER_AGENT=fuel-route-optimizer-assessment/1.0
 OSRM_BASE_URL=http://router.project-osrm.org
 ```
 
-`OSRM_BASE_URL` is configurable so the public demonstration server can be
-replaced with a dedicated OSRM instance without changing application code.
-
 ---
 
-## API Endpoint
+## API Documentation
 
-### Optimize a route
+### Optimize route and fuel stops
 
-```http
-POST /api/optimize-route/
-Content-Type: application/json
-```
+- **Endpoint**: `POST /api/optimize-route/`
+- **Content-Type**: `application/json`
 
-Request body:
+#### Request payload
 
 ```json
 {
@@ -166,7 +155,7 @@ Request body:
 }
 ```
 
-Example request:
+#### Example request
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/optimize-route/ \
@@ -174,7 +163,7 @@ curl -X POST http://127.0.0.1:8000/api/optimize-route/ \
   -d '{"start":"New York, NY","finish":"Los Angeles, CA"}'
 ```
 
-Response summary:
+#### Successful response (`200 OK`)
 
 ```json
 {
@@ -189,9 +178,12 @@ Response summary:
   "fuel_stops_count": 6,
   "fuel_stops": [
     {
+      "station_id": 72445,
       "station_name": "SHEETZ #639",
+      "address": "I-80 Exit 223, Youngstown, OH",
       "price_per_gallon": 3.059,
       "gallons_purchased": 39.92,
+      "purchase_cost_usd": 122.11,
       "distance_from_start_miles": 400.5,
       "detour_from_route_miles": 3.8,
       "coordinates": [41.0986, -80.6474]
@@ -208,26 +200,43 @@ Response summary:
   ],
   "route_geometry": {
     "type": "LineString",
-    "coordinates": []
+    "coordinates": [
+      [-74.006, 40.7128],
+      [-74.010, 40.7135]
+    ]
   },
-  "assumptions": {}
+  "assumptions": {
+    "vehicle_mpg": 10.0,
+    "maximum_range_miles": 500.0,
+    "preferred_stop_window_miles": [380.0, 460.0]
+  }
 }
 ```
 
-The example is shortened; the real response contains every stop, travel leg,
-assumption, and the complete route geometry.
+The example is shortened. The real response contains all stops, travel legs,
+assumptions, and the complete GeoJSON route geometry.
 
-### Important response fields
+---
 
-| Field | Description |
-| --- | --- |
-| `route_geometry` | Complete GeoJSON route for map rendering |
-| `fuel_stops` | Selected stations, prices, purchases, detours, and coordinates |
-| `travel_legs` | Consecutive journey legs and the selection window used |
-| `fallback_windows_used` | Number of times the preferred window was unavailable |
-| `total_gallons_consumed` | Route distance divided by 10 MPG |
-| `total_fuel_cost_usd` | Total cost of origin and en-route fuel purchases |
-| `assumptions` | Calculation rules returned transparently by the API |
+## Architecture & Algorithm Highlights
+
+1. **Validated USA Inputs**: A DRF serializer validates the payload before
+   Nominatim resolves both locations with a US-only filter.
+2. **Single Routing Call**: OSRM returns the complete driving distance and
+   GeoJSON route in one routing request.
+3. **Local Station Search**: More than 7,000 coordinate-enriched fuel records
+   are searched locally, avoiding station lookup calls during optimization.
+4. **Linear Route Projection**: Shapely's `project(normalized=True)` determines
+   each candidate station's progress along the route.
+5. **Dynamic Stop Window**: The optimizer rejects premature cheap stops and
+   selects the lowest-priced viable station in the preferred 380-460 mile
+   window.
+6. **Forward Reachability**: A station is preferred only when another station
+   or the destination remains reachable within 500 miles.
+7. **Transparent Fallbacks**: Wider stop windows are used only when required
+   and are exposed through `fallback_windows_used` and `travel_legs`.
+8. **Explicit Failure**: The API returns `422 Unprocessable Entity` when the
+   available station data cannot produce a valid 500-mile-range plan.
 
 ---
 
@@ -236,58 +245,47 @@ assumption, and the complete route geometry.
 | Status | Meaning |
 | --- | --- |
 | `400 Bad Request` | Missing, identical, invalid, or non-USA locations |
-| `422 Unprocessable Entity` | No valid station plan satisfies the 500-mile range |
+| `422 Unprocessable Entity` | No station plan satisfies the 500-mile range |
 | `502 Bad Gateway` | Geocoding or routing provider is unavailable |
 | `500 Internal Server Error` | Unexpected internal failure |
 
 ---
 
-## Tests
-
-Run the automated suite:
+## Testing
 
 ```bash
 python manage.py test
 ```
 
-The 11 tests cover:
-
-- Request validation and USA location failures.
-- Short-route fuel calculations.
-- Preferred 380-460 mile stop selection.
-- Rejection of unnecessary early cheap stops.
-- Safe fallback-window behavior.
-- Hard 500-mile leg enforcement.
-- Infeasible route handling.
-- Successful API responses.
+The 11 automated tests cover request validation, short-route calculations,
+preferred and fallback stop windows, rejection of unnecessary early stops,
+hard 500-mile range enforcement, successful API output, and infeasible routes.
 
 ---
 
 ## Performance
 
 Station data is loaded once, geocoding results are cached, and only one routing
-call is made per calculation. In a local verification, a New York-to-Los
-Angeles request returned six realistic fuel stops in approximately five
-seconds. Actual response time depends on the two public external services.
+call is made per calculation. During local verification, a New York-to-Los
+Angeles request returned six realistic stops in approximately five seconds.
+Actual response time depends on the public geocoding and routing services.
 
 ---
 
 ## Known Data Limitation
 
-The supplied assessment CSV includes station addresses and prices but not exact
-latitude/longitude values. The included coordinate file therefore uses
-city-level matching. This is suitable for demonstrating the routing and
-optimization design, but a production system should replace it with verified
-station coordinates.
+The assessment CSV contains station addresses and prices but no exact latitude
+or longitude fields. The included preprocessing step therefore uses city-level
+matching. This is suitable for demonstrating the route optimization design,
+but a production system should replace it with verified station coordinates.
 
 ---
 
 ## Loom Demonstration Outline
 
 1. Send a New York-to-Los Angeles request in Postman.
-2. Show the six fuel stops, 380-460 mile legs, total cost, and GeoJSON route.
-3. Show one validation error using a missing location.
+2. Show the six fuel stops, 380-460 mile legs, total cost, and route geometry.
+3. Show a validation error using a missing location.
 4. Briefly explain `routing/views.py`, `routing/services.py`, and
    `routing/tests.py`.
-5. Run `python manage.py test` and keep the complete recording under five
-   minutes.
+5. Run `python manage.py test` and keep the full video under five minutes.
