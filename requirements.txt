@@ -1,6 +1,8 @@
-Django==6.1.2
-djangorestframework==3.18.3
-geopy==2.5.0
-pandas==3.0.6
-requests==2.34.2
-Shapely==2.2.0
+asgiref>=3.12.1,<4.0
+Django>=6.1.2,<6.2
+djangorestframework>=3.18.3,<4.0
+requests>=2.34.2,<3.0
+Shapely>=2.2.0,<3.0
+geopy>=2.5.0,<3.0
+pandas>=3.0.6,<4.0
+urllib3>=2.8.0,<3.0
